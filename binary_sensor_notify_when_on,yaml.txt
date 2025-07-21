@@ -1,0 +1,108 @@
+blueprint:
+  name: Binary Sensor notify when on
+  description: sends messages to those who 
+  domain: automation
+  author: JonoPorter
+  source_url: https://github.com/JonoPorter/HomeAssistant/binary_sensor_notify_when_on.yaml
+  input:
+    t_binary_sensor:
+      name: Binary sensor
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+    t_pushover_on_message:
+      name:  Pushover on message
+      description: Message to send to alexa when sensor is on. Leave blank to not send message.
+      default: ""
+    t_alexa_on_message:
+      name: Alexa Notification
+      description: Message to send to alexa when sensor is on. Leave blank to not send message.
+      default: ""
+    t_pushover_off_message:
+      name: Pushover off message
+      description: Message to send to pushify when sensor is off. Leave blank to not send message.
+      default: ""
+    t_seconds_delay_timout:
+      name: Delay Timout
+      description: time to wait before in on state before sending messages
+      default: 120
+      selector: 
+        number: 
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+
+    t_seconds_repeat_timout:
+      name: Repeat timeout
+      description: delay between repeating message on alexa
+      default: 45
+      selector: 
+        number: 
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+      
+alias: "Binary Sensor should be off"
+variables:
+    str_pushover_on_message: !input t_pushover_on_message
+    str_alexa_on_message: !input t_alexa_on_message
+    str_pushover_off_message: !input t_pushover_off_message
+triggers:
+  - trigger: state
+    entity_id: !input t_binary_sensor
+    to: "on"
+    for:
+      seconds: !input t_seconds_delay_timout
+conditions: []
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ str_pushover_on_message|length > 0 }}"
+    then:
+      - action: notify.pushover
+        metadata: {}
+        data:
+          message: !input t_pushover_on_message
+          data:
+            sound: alien
+            priority: 1
+  - if:
+      - condition: template
+        value_template: "{{ str_alexa_on_message|length > 0 }}"
+    then:          
+      - repeat:
+          sequence:
+            - action: notify.alexa_media_everywhere
+              data:
+                message: !input t_alexa_on_message
+                data:
+                  type: announce
+            - wait_for_trigger:
+                - trigger: state
+                  entity_id: !input t_binary_sensor
+                  to: "off"
+                  for:
+                    seconds: !input t_seconds_repeat_timout
+          while:
+            - condition: state
+              entity_id: !input t_binary_sensor
+              state: "on"
+    else:
+      - wait_for_trigger:
+          - trigger: state
+            entity_id: !input t_binary_sensor
+            to: "off"
+  - if:
+      - condition: template
+        value_template: "{{ str_pushover_off_message|length > 0 }}"
+    then:
+      - action: notify.pushover
+        metadata: {}
+        data:
+          message: !input t_pushover_off_message
+ 
+mode: single
+

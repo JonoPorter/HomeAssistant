@@ -1,0 +1,123 @@
+blueprint:
+  name: Notify When Finished
+  description: Sends messages when an appliance cycle is finished.
+  domain: automation
+  author: JonoPorter
+  source_url: https://github.com/JonoPorter/HomeAssistant/notify_when_finished.yaml
+
+  input:
+    t_binary_sensor:
+      name: Appliance running sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    t_quiet_pushover:
+      name: Quiet-time sensor for Pushover (optional)
+      description: >
+        Optional binary_sensor or input_boolean that is ON during quiet time.
+        When ON, Pushover notifications will be suppressed.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - input_boolean
+
+    t_quiet_alexa:
+      name: Quiet-time sensor for Alexa (optional)
+      description: >
+        Optional binary_sensor or input_boolean that is ON during quiet time.
+        When ON, Alexa announcements will be suppressed.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - input_boolean
+
+    t_alexa_message:
+      name: Alexa Notification
+      description: Message to send to Alexa when finished. Leave blank to not send.
+      default: ""
+
+    t_pushover_message:
+      name: Pushover Notification
+      description: Message to send to Pushover when finished. Leave blank to not send.
+      default: ""
+
+    t_minimum_on_time:
+      name: Minimum on time (seconds)
+      description: How long it needs to be ON to be considered running.
+      default: 600
+      selector:
+        number:
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+
+    t_minimum_off_time:
+      name: Minimum off time (seconds)
+      description: How long it needs to be OFF to be considered finished.
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+
+alias: Notify When Finished
+mode: single
+
+variables:
+  str_alexa_message: !input t_alexa_message
+  str_pushover_message: !input t_pushover_message
+  quiet_pushover: !input t_quiet_pushover
+  quiet_alexa: !input t_quiet_alexa
+
+trigger:
+  - platform: state
+    entity_id: !input t_binary_sensor
+    to: "on"
+    for:
+      seconds: !input t_minimum_on_time
+
+condition: []
+
+action:
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input t_binary_sensor
+        to: "off"
+        for:
+          seconds: !input t_minimum_off_time
+
+  # --- Pushover ---
+  - if:
+      - condition: template
+        value_template: >-
+          {{
+            str_pushover_message | length > 0
+            and (quiet_pushover == '' or is_state(quiet_pushover, 'off'))
+          }}
+    then:
+      - service: notify.pushover
+        data:
+          message: !input t_pushover_message
+
+  # --- Alexa ---
+  - if:
+      - condition: template
+        value_template: >-
+          {{
+            str_alexa_message | length > 0
+            and (quiet_alexa == '' or is_state(quiet_alexa, 'off'))
+          }}
+    then:
+      - service: script.alexa_announce_to_all_echos
+        data:
+          message: !input t_alexa_message

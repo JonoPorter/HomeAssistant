@@ -1,0 +1,163 @@
+blueprint:
+  name: Notify When On
+  description: >
+    Sends notifications when a binary sensor turns on, with optional
+    per-channel quiet-time controls for Pushover and Alexa announcements.
+  domain: automation
+  author: JonoPorter
+  source_url: https://github.com/JonoPorter/HomeAssistant/notify_when_on.yaml
+
+  input:
+    t_binary_sensor:
+      name: Binary sensor
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+
+    t_quiet_time_blocker_pushover:
+      name: Quiet time / Pushover blocker (optional)
+      description: >
+        Optional binary_sensor or input_boolean. When ON, Pushover
+        notifications are suppressed.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - input_boolean
+
+    t_quiet_time_blocker_alexa:
+      name: Quiet time / Alexa blocker (optional)
+      description: >
+        Optional binary_sensor or input_boolean. When ON, Alexa announcements
+        are suppressed.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - input_boolean
+
+    t_pushover_on_message:
+      name: Pushover ON message
+      description: Message sent when the sensor turns ON. Leave blank to disable.
+      default: ""
+
+    t_alexa_on_message:
+      name: Alexa ON announcement
+      description: Message announced while the sensor remains ON. Leave blank to disable.
+      default: ""
+
+    t_pushover_off_message:
+      name: Pushover OFF message
+      description: Message sent when the sensor turns OFF. Leave blank to disable.
+      default: ""
+
+    t_seconds_delay_timout:
+      name: Delay before notifying (seconds)
+      description: Time the sensor must remain ON before notifications are sent.
+      default: 120
+      selector:
+        number:
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+
+    t_seconds_repeat_timout:
+      name: Alexa repeat interval (seconds)
+      description: Time between repeated Alexa announcements while ON.
+      default: 45
+      selector:
+        number:
+          min: 1
+          max: 10000
+          step: 1
+          mode: box
+
+alias: Notify When On
+
+variables:
+  str_pushover_on_message: !input t_pushover_on_message
+  str_alexa_on_message: !input t_alexa_on_message
+  str_pushover_off_message: !input t_pushover_off_message
+
+  ent_quiet_pushover: !input t_quiet_time_blocker_pushover
+  ent_quiet_alexa: !input t_quiet_time_blocker_alexa
+
+triggers:
+  - trigger: state
+    entity_id: !input t_binary_sensor
+    to: "on"
+    for:
+      seconds: !input t_seconds_delay_timout
+
+conditions: []
+
+actions:
+  # --- Pushover ON ---
+  - if:
+      - condition: template
+        value_template: "{{ str_pushover_on_message | length > 0 }}"
+      - condition: template
+        value_template: >
+          {{ ent_quiet_pushover == '' or states(ent_quiet_pushover) != 'on' }}
+    then:
+      - action: notify.pushover
+        data:
+          message: !input t_pushover_on_message
+          data:
+            sound: alien
+            priority: 1
+
+  # --- Alexa repeating announcements ---
+  - if:
+      - condition: template
+        value_template: "{{ str_alexa_on_message | length > 0 }}"
+    then:
+      - repeat:
+          sequence:
+            - if:
+                - condition: template
+                  value_template: >
+                    {{ ent_quiet_alexa == '' or states(ent_quiet_alexa) != 'on' }}
+              then:
+                - action: script.alexa_announce_to_all_echos
+                  data:
+                    message: !input t_alexa_on_message
+                    data:
+                      type: announce
+
+            - wait_for_trigger:
+                - trigger: state
+                  entity_id: !input t_binary_sensor
+                  to: "off"
+              timeout:
+                seconds: !input t_seconds_repeat_timout
+          while:
+            - condition: state
+              entity_id: !input t_binary_sensor
+              state: "on"
+    else:
+      - wait_for_trigger:
+          - trigger: state
+            entity_id: !input t_binary_sensor
+            to: "off"
+
+  # --- Pushover OFF ---
+  - if:
+      - condition: template
+        value_template: "{{ str_pushover_off_message | length > 0 }}"
+      - condition: template
+        value_template: >
+          {{ ent_quiet_pushover == '' or states(ent_quiet_pushover) != 'on' }}
+    then:
+      - action: notify.pushover
+        data:
+          message: !input t_pushover_off_message
+
+mode: single
